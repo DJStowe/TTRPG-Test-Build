@@ -57,83 +57,29 @@ class Floor:
 
         #Create a room obj for each coordinate
         for i in range(len(self.arrX)):
-            self.AddRoom(Room([self.arrX[i], self.arrY[i]]))
-        self.rectangles = self.rooms.copy()
-        return 1
-    
-    #TODO This needs to add all corners of intersection then remove any corners inside of the combined boxes or any other unneeded corners
-
-    def CombineRooms(self):
-       
-                   
-       return -1
-      
-
-    def isOverlaped(self):
-        """ Checks all room objects to see which overlap eachother
-
-        Returns:
-            A list of rooms that overlap as X,Y pairs representing each room's midpoint
-        """
-        overlappingCorners = []
-        # Function to check if two rooms overlap
-        #Returns list of corners from intersection
-        def RoomsOverlap(room1, room2):
-            # Calculate edges for room1
-            room1_left = min([corner[0] for corner in room1.corners])
-            room1_right = max([corner[0] for corner in room1.corners])
-            room1_up = max([corner[1] for corner in room1.corners])
-            room1_down = min([corner[1] for corner in room1.corners])
-
-            # Calculate edges for room2
-            room2_left = min([corner[0] for corner in room2.corners])
-            room2_right = max([corner[0] for corner in room2.corners])
-            room2_up = max([corner[1] for corner in room2.corners])
-            room2_down = min([corner[1] for corner in room2.corners])
-
-        # Check for overlap and calculate intersection points
-            if room1_right >= room2_left and room1_left <= room2_right and room1_down <= room2_up and room1_up >= room2_down:
-                # Calculate the edges of the overlapping region
-                overlap_left = max(room1_left, room2_left)
-                overlap_right = min(room1_right, room2_right)
-                overlap_up = min(room1_up, room2_up)
-                overlap_down = max(room1_down, room2_down)
-
-                # Define the corners of the overlapping region
-                overlappingCorners = [
-                    (overlap_left, overlap_down),
-                    (overlap_left, overlap_up),
-                    (overlap_right, overlap_up),
-                    (overlap_right, overlap_down)
-                ]
-                room1.corners.extend(overlappingCorners)
-                #print(f"Here is room1 corners list: {room1.corners}")
-                return True
-            else:
-                # Return an empty list if there is no overlap
-                return False
+            self.AddRoom(Room(self.arrX[i], self.arrY[i]))
         
-        # Iterate through each pair of rooms
-        for i, room1 in enumerate(self.rectangles):
-            for room2 in self.rectangles[i+1:]:
-                overlappingCorners.append(RoomsOverlap(room1, room2))
-                
-        return overlappingCorners
+        for i, room1 in enumerate(self.rooms):
+            for room2 in self.rooms[i+1:]:
+                room1.Combine(room2)
+                    #self.MakeRooms() #TODO I Need to change this so I can make a single room at a time
+        return 1     
     
     def Draw(self):
         figure = plt.figure(figsize=(6,6))
         plt.plot(self.cornerX, self.cornerY, color='black')
-        #This shit is about to get ugly
-        for room in self.rooms:
-            #seperate lists for x and y coordinates
-            x_coords = [corner[0] for corner in room.corners]
-            y_coords = [corner[1] for corner in room.corners]
 
-            # Add the first corner to close shape
-            x_coords.append(room.corners[0][0])
-            y_coords.append(room.corners[0][1])
-            
-            plt.plot(x_coords, y_coords, color='blue')
+        for room in self.rooms:
+            if (len(room.corners) > 0): 
+                #seperate lists for x and y coordinates
+                x_coords = [corner[0] for corner in room.corners]
+                y_coords = [corner[1] for corner in room.corners]
+
+                # Add the first corner to close shape
+                x_coords.append(room.corners[0][0])
+                y_coords.append(room.corners[0][1])
+                
+                plt.plot(x_coords, y_coords, color='blue')
 
         xlim = plt.xlim(-10, 110)            # Set x-axis limits
         ylim = plt.ylim(-10, 110)            # Set y-axis limits
@@ -190,9 +136,6 @@ class Room:
     """
     def Combine(self, otherRoom):
         interiorRectangle = self.Intersect(otherRoom)
-        print(f"self Corners are: {self.corners}")
-        print(f"other Room Corners are: {otherRoom.corners}")
-        print(f"Interior Rectangle is: {interiorRectangle}")
         
         temp = []
         if interiorRectangle is not None:
@@ -203,8 +146,10 @@ class Room:
                 else: #If not in both lists then add to self.corners
                     self.corners.append(intCorners)
             print(f"Before Sorting Corners List: {self.corners}")
+            otherRoom.Delete()
             self.SortCorners()
-        return -1
+            return True
+        return False
     
     def SortCorners(self):
         """This method sorts all corners starting at the first in the corner list. Each pair is the closest to the previous pair
@@ -243,7 +188,6 @@ class Room:
                 currY = nextPoint[1]
 
         self.corners = tempList.copy()
-        print(f"After sorting the list is: {self.corners}")
         return 1
     
     def RemoveWalls(self, otherRoom, interiorRectangle):
@@ -252,8 +196,8 @@ class Room:
     
     #TODO    
     def Delete(self):
-
-        return -1    
+        self.corners = []
+        return 1    
 
 
 
@@ -262,26 +206,25 @@ def main():
     i = 0
 
     floor = Floor()
-    #floor.MakeRooms() #Creates randomly generated rooms
+    floor.MakeRooms() #Creates randomly generated rooms
     
 #Testin purposes:
     #region
-    room1 = Room(0,20)
-    room2 = Room(58, 43)
-    room3 = Room(2, 15)
-    room4 = Room(53,28)
+    #room1 = Room(0,20)
+    #room2 = Room(58, 43)
+    ##room3 = Room(2, 15)
+    #room4 = Room(53,28)
     
-    floor.AddRoom(room1, room2, room3, room4)
+    #floor.AddRoom(room1, room2, room3, room4)
     # Iterate through each pair of rooms
-    for i, room1 in enumerate(floor.rooms):
-        for room2 in floor.rooms[i+1:]:
-            room1.Combine(room2)
+    #for i, room1 in enumerate(floor.rooms):
+        #for room2 in floor.rooms[i+1:]:
+            #room1.Combine(room2)
 
   
     #floor.rectangles = floor.rooms.copy()
 
     #floor.CombineRooms()
-    #floor.isOverlaped()
     #for rooms in overlaps:
         #print(f"These rooms overlap: {rooms[0].middle}, {rooms[1].middle}")
     #room1.SortCorners()
