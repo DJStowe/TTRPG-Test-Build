@@ -207,7 +207,8 @@ class Room:
         return -1
     
     def SortCorners(self):
-        """This method sorts all corners starting at the first in the corner list. Each pair is the closest to the previous pair       
+        """This method sorts all corners starting at the first in the corner list. Each pair is the closest to the previous pair
+        sort-corners-fix update: Adds a check to make sure next point is in line with current point (X or Y is same)       
         Args:
             none
         Returns:
@@ -229,9 +230,11 @@ class Room:
                     continue #Reserved skip to next corner
 
                 distance = (corner[0] - currX)**2 + (corner[1] - currY)**2 #ΔX^2 + ΔY^2 
-                if (distance < nextDistance):
-                    nextDistance = distance
-                    nextPoint = corner
+                
+                if ((corner[0] == currX) or (corner[1] == currY)): #If this is in line then 
+                    if (distance < nextDistance):
+                        nextDistance = distance
+                        nextPoint = corner
 
             if nextPoint:
                 excludedPoints.append(nextPoint)
