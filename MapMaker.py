@@ -27,12 +27,10 @@ maxRoomVariance = 12
 class Floor:
     def __init__(self):
         self.rooms = []
-        self.rectangles = []
+        self.rectangles = [] #TODO decide if we need this. It can allow us to track combined rooms as two smaller rooms
         self.cornerX = [0, 100, 100, 0, 0]
         self.cornerY = [0, 0, 100, 100, 0]
-        self.numRooms = random.randint(minRooms, maxRooms) #TODO Temp numbers for how many rooms there are
-        self.arrX = []
-        self.arrY = []
+        self.numRooms = random.randint(minRooms, maxRooms) 
 
     def AddRoom(self, *rooms):
         """Adds any amount of rooms 
@@ -42,29 +40,25 @@ class Floor:
         """
         for room in rooms:
             self.rooms.append(room)
+            room.floor = self
 
     def MakeRooms(self):
         """Makes X rooms in random locations where X is a random number between minRooms & maxRooms
         """
-        while len(self.arrX) < self.numRooms:
+        currNumRooms = len(self.rooms)
+        while currNumRooms < self.numRooms:
             x = random.randint(1, 100)
             y = random.randint(1, 100)
-
-            # Check if the coordinate is already used
-            if (x, y) not in zip(self.arrX, self.arrY):
-                self.arrX.append(x)
-                self.arrY.append(y)
-
-        #Create a room obj for each coordinate
-        for i in range(len(self.arrX)):
-            self.AddRoom(Room(self.arrX[i], self.arrY[i]))
-        
+            
+            # Check if the coordinate is not used then create room
+            if not any(room.x == x and room.y == y for room in self.rooms):
+                self.AddRoom(Room(x,y))
+                currNumRooms += 1
+            
         for i, room1 in enumerate(self.rooms):
             for room2 in self.rooms[i+1:]:
-                room1.Combine(room2)
-                    #self.MakeRooms() #TODO I Need to change this so I can make a single room at a time
-        return 1     
-    
+                room1.Combine(room2)   
+        return True    
     def Draw(self):
         figure = plt.figure(figsize=(6,6))
         plt.plot(self.cornerX, self.cornerY, color='black')
@@ -84,7 +78,10 @@ class Floor:
         xlim = plt.xlim(-10, 110)            # Set x-axis limits
         ylim = plt.ylim(-10, 110)            # Set y-axis limits
         plt.show
-        
+
+    def RemoveRoom(self, room):
+        self.rooms.remove(room)
+
 
 class Room:
     """
@@ -100,7 +97,8 @@ class Room:
         self.width = random.randint(minRoomVariance, maxRoomVariance)
         self.height = random.randint(minRoomVariance, maxRoomVariance)
         self.corners = []
-        
+        self.floor = None
+
         self.corners.append((self.x, self.y))
         self.corners.append((self.x + self.width, self.y))
         self.corners.append((self.x + self.width,self.y - self.height)) 
@@ -120,6 +118,7 @@ class Room:
 
         # Check if there is no overlap
         if x_right < x_left or y_bottom > y_top:
+            #print(f"Intersect returns None")
             return None
 
         interiorRectangle.append((x_left, y_top))
@@ -137,15 +136,36 @@ class Room:
     def Combine(self, otherRoom):
         interiorRectangle = self.Intersect(otherRoom)
         
-        temp = []
+        cornersToAdd = []
+        #print(f"Interior Rect is: {interiorRectangle}")
         if interiorRectangle is not None:
             self.corners.extend(otherRoom.corners) #Add room2 corners to room1 corners list
-            for intCorners in interiorRectangle: #Loops through interior Rect and removes anything that's in both lists from room1 corners
+            for intCorners in interiorRectangle: #Loops through interior rect and removes duplicates
                 if(intCorners in self.corners):
                     self.corners.remove(intCorners)
-                else: #If not in both lists then add to self.corners
-                    self.corners.append(intCorners)
-            print(f"Before Sorting Corners List: {self.corners}")
+                    
+                else: #If not duplicate add
+                    cornersToAdd.append(intCorners)
+            
+            for intCorner in cornersToAdd:
+                for i, corner in enumerate(self.corners):
+                    if i + 1 < len(self.corners):
+                        nextCorner = self.corners[i+1]
+                        if((intCorner[0] == corner[0]) and (intCorner[1] == nextCorner[1])):
+                            #Insert into this location then break?
+                            print(f"Adding corner {intCorner} from list: {cornersToAdd} to index {i + 1} in list {self.corners}")
+                            self.corners.insert(i+1, intCorner)
+                            print(f"New list is: {self.corners}")
+                            #cornersToAdd.remove(intCorner)
+                            break
+                        
+                #If not in place adds at end
+                if (intCorner not in self.corners):
+                    self.corners.append(intCorner)
+
+            #print(f"List of corners is: {self.corners} otherRoom was: {otherRoom.corners}")
+            #print(f"List of intersects is: {cornersToAdd}")
+
             otherRoom.Delete()
             self.SortCorners()
             return True
@@ -159,35 +179,100 @@ class Room:
         Returns:
             bool: True when no errors occur
         """
-        excludedPoints = []
-        tempList = []
-        currX = self.x
-        currY = self.y
-        tempList.append((currX, currY))
-        excludedPoints.append((currX, currY))
-        
-        while len(tempList) < len(self.corners):
-            nextDistance = float('inf')
-            nextPoint = None
+        tempCorners = self.corners.copy()
+        inOrderList = []
+        pointsAdded = 0
+        minX = min(corner[0] for corner in self.corners)
+        maxY = max(corner[1] for corner in self.corners)
+        topLeft = (minX, maxY)
+        #TODO Idk if this fixes anything
+        if topLeft not in tempCorners:
+            topLeft = tempCorners[0]
 
-            for corner in self.corners:
-                if corner in excludedPoints:
-                    continue #Reserved skip to next corner
+        currPoint = topLeft
+        pointToAdd = topLeft
+        inOrderList.append(pointToAdd)
+        pointsAdded += 1
+        try:
+            tempCorners.remove(pointToAdd)
+        except:
+            #print(f"Unexpected error: {pointToAdd} is not in the list {self.corners}")
+            #print(f"tempCorners is: {tempCorners} and inOrderList is: {inOrderList}")
+            SystemExit
+        #pointToAdd = None
+        directionPointToAdd = 'up'
+        direction = None
 
-                distance = (corner[0] - currX)**2 + (corner[1] - currY)**2 #ΔX^2 + ΔY^2 
-                
-                if ((corner[0] == currX) or (corner[1] == currY)): #If this is in line then 
-                    if (distance < nextDistance):
-                        nextDistance = distance
-                        nextPoint = corner
+        #Returns direction or None if directionPointToAdd is higher priority
+        #Also returns None if the pointToAdd is in the same direction and closer to the currPoint
+        def FindDirection(currPoint, nextPoint, directionPointToAdd, pointToAdd):
+            direction = None
+            sameY = currPoint[1] == nextPoint[1]
+            sameX = currPoint[0] == nextPoint[0]
 
-            if nextPoint:
-                excludedPoints.append(nextPoint)
-                tempList.append(nextPoint)
-                currX = nextPoint[0]
-                currY = nextPoint[1]
+            if ((nextPoint[0] - currPoint[0] > 0) and sameY):
+                direction = 'right'
+            elif((nextPoint[0] - currPoint[0] < 0) and sameY):
+                direction = 'left'
+            elif((nextPoint[1] - currPoint[1] > 0) and sameX):
+                direction = 'up'
+            elif((nextPoint[1] - currPoint[1] < 0) and sameX):
+                direction = 'down'
+            else:
+                direction = None
+                return None
+            
+            if (pointToAdd is not None and directionPointToAdd is not None):
+            # Check if the direction is the same but the next_point is further than point_to_add
+                if direction == directionPointToAdd:
+                    if direction in ['right', 'left']:
+                        if abs(pointToAdd[0] - currPoint[0]) < abs(nextPoint[0] - currPoint[0]):
+                            return None
+                    elif direction in ['up', 'down']:
+                        if (pointToAdd[1] - currPoint[1]) < abs(nextPoint[1] - currPoint[1]):
+                            return None
+            return direction
 
-        self.corners = tempList.copy()
+        while pointsAdded < len(self.corners):
+            for corner in tempCorners:
+                direction = FindDirection(currPoint, corner, directionPointToAdd, pointToAdd)
+                match direction:
+                    case None:
+                        pointToAdd = pointToAdd
+                    case 'right':
+                        pointToAdd = corner
+                        directionPointToAdd = 'right'
+                    case 'down':
+                        if (directionPointToAdd not in {'right'}):
+                            pointToAdd = corner
+                            directionPointToAdd = 'down'
+                    case 'left':
+                        if (directionPointToAdd not in {'right', 'down'}):
+                            pointToAdd = corner
+                            directionPointToAdd = 'left'
+
+                    case 'up':
+                        if (directionPointToAdd not in {'right', 'down', 'left'}):
+                            pointToAdd = corner
+                            directionPointToAdd = 'up'    
+
+            #TODO Fix bug that writes the same number over and over here
+            inOrderList.append(pointToAdd)
+            pointsAdded += 1
+            
+            try:
+                tempCorners.remove(pointToAdd)
+            except:
+                print(f"Unexpected error: {pointToAdd} is not in the list {self.corners}")
+                print(f"tempCorners is: {tempCorners}")
+                #SystemExit
+            currPoint = pointToAdd
+            directionPointToAdd = 'temp'
+            #pointToAdd = None
+        self.corners = inOrderList.copy()
+        print(f"Ordered list: {self.corners}")
+
+
         return 1
     
     def RemoveWalls(self, otherRoom, interiorRectangle):
@@ -196,7 +281,9 @@ class Room:
     
     #TODO    
     def Delete(self):
-        self.corners = []
+        if (self.floor and self.corners is not None):
+            self.floor.RemoveRoom(self)
+        self.corners = None
         return 1    
 
 
@@ -204,18 +291,25 @@ class Room:
 def main():
 
     i = 0
-
-    floor = Floor()
-    floor.MakeRooms() #Creates randomly generated rooms
+    while i < 10:
+        floor = Floor()
+            #print(f"This floor should have: {floor.numRooms} rooms")
+        floor.MakeRooms() #Creates randomly generated rooms
+        floor.Draw()
+    
+        #print(f"Floor has: {len(floor.rooms)} Rooms")
+        #input(f"Press Enter...")
+        i+= 1
     
 #Testin purposes:
     #region
     #room1 = Room(0,20)
     #room2 = Room(58, 43)
-    ##room3 = Room(2, 15)
+    #room3 = Room(2, 15)
     #room4 = Room(53,28)
     
-    #floor.AddRoom(room1, room2, room3, room4)
+    #floor.AddRoom(room1, room2, room3)
+
     # Iterate through each pair of rooms
     #for i, room1 in enumerate(floor.rooms):
         #for room2 in floor.rooms[i+1:]:
@@ -229,7 +323,7 @@ def main():
         #print(f"These rooms overlap: {rooms[0].middle}, {rooms[1].middle}")
     #room1.SortCorners()
     #endregion
-    floor.Draw()
+    #floor.Draw()
 
     return 1
 
