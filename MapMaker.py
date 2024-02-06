@@ -49,7 +49,7 @@ class Floor:
         while currNumRooms < self.numRooms:
             x = random.randint(1, 100)
             y = random.randint(1, 100)
-
+            
             # Check if the coordinate is not used then create room
             if not any(room.x == x and room.y == y for room in self.rooms):
                 self.AddRoom(Room(x,y))
@@ -58,8 +58,7 @@ class Floor:
         for i, room1 in enumerate(self.rooms):
             for room2 in self.rooms[i+1:]:
                 room1.Combine(room2)   
-        return True
-    
+        return True    
     def Draw(self):
         figure = plt.figure(figsize=(6,6))
         plt.plot(self.cornerX, self.cornerY, color='black')
@@ -273,6 +272,7 @@ class Room:
         self.corners = inOrderList.copy()
         print(f"Ordered list: {self.corners}")
 
+
         return 1
     
     def RemoveWalls(self, otherRoom, interiorRectangle):
@@ -309,6 +309,7 @@ def main():
     #room4 = Room(53,28)
     
     #floor.AddRoom(room1, room2, room3)
+
     # Iterate through each pair of rooms
     #for i, room1 in enumerate(floor.rooms):
         #for room2 in floor.rooms[i+1:]:
