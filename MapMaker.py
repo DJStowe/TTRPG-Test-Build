@@ -4,8 +4,7 @@ import random
 """
 This program generates random maps for TTRPG based on the Nintendo property Pokemon Mystery Dungeon
 TODO List
-Write CombineRooms Function
-    This should also make new rooms if there aren't enough
+Combine rooms sometimes makes weird shapes
 Add start and end stairs. TODO Grab the sprites for those before I delete them
 Make Hallways that connect rooms (Maybe reuse closest point code)
 Little things like dead ends need to exist to be more like the original game
@@ -58,12 +57,43 @@ class Floor:
         for i, room1 in enumerate(self.rooms):
             for room2 in self.rooms[i+1:]:
                 room1.Combine(room2)   
-        return True    
+        return True
+    
+    def AddStairs(self):
+        #Picks random rooms for stairs
+        roomNumUp = random.randint(0, self.numRooms - 1) 
+        while True:
+            roomNumDown = random.randint(0, self.numRooms - 1)
+            if roomNumUp != roomNumDown:
+                break
+        #Assignes each room a status for if it has stairs
+        roomUp = self.rooms[roomNumUp]
+        roomDown = self.rooms[roomNumDown]
+        roomUp.stairs = 'Up'
+        roomDown.stairs = 'Down'
+
+        upX = random.randint(roomUp.x+1, roomUp.x + roomUp.width-1)
+        upY = random.randint(roomUp.y-roomUp.height + 1, roomUp.y-1)
+
+        downX = random.randint(roomDown.x+1, roomDown.x + roomDown.width-1)
+        downY = random.randint(roomDown.y-roomDown.height + 1, roomDown.y-1)
+        roomUp.stairsXY = (upX,upY)
+        roomDown.stairsXY = (downX, downY)
+
+        return (roomNumUp, roomNumDown)
+
     def Draw(self):
         figure = plt.figure(figsize=(6,6))
         plt.plot(self.cornerX, self.cornerY, color='black')
 
         for room in self.rooms:
+            if (room.stairs == "Up"):
+                stairUp = room.stairsXY
+                plt.scatter(stairUp[0], stairUp[1], color='red', s=20)
+            if (room.stairs == "Down"):
+                stairDown = room.stairsXY
+                plt.scatter(stairDown[0], stairDown[1], color='black', s=20)
+
             if (len(room.corners) > 0): 
                 #seperate lists for x and y coordinates
                 x_coords = [corner[0] for corner in room.corners]
@@ -74,6 +104,7 @@ class Floor:
                 y_coords.append(room.corners[0][1])
                 
                 plt.plot(x_coords, y_coords, color='blue')
+                
 
         xlim = plt.xlim(-10, 110)            # Set x-axis limits
         ylim = plt.ylim(-10, 110)            # Set y-axis limits
@@ -98,6 +129,8 @@ class Room:
         self.height = random.randint(minRoomVariance, maxRoomVariance)
         self.corners = []
         self.floor = None
+        self.stairs = None
+        self.stairsXY = None
 
         self.corners.append((self.x, self.y))
         self.corners.append((self.x + self.width, self.y))
@@ -118,7 +151,6 @@ class Room:
 
         # Check if there is no overlap
         if x_right < x_left or y_bottom > y_top:
-            #print(f"Intersect returns None")
             return None
 
         interiorRectangle.append((x_left, y_top))
@@ -135,7 +167,6 @@ class Room:
     """
     def Combine(self, otherRoom):
         interiorRectangle = self.Intersect(otherRoom)
-        
         cornersToAdd = []
         #print(f"Interior Rect is: {interiorRectangle}")
         if interiorRectangle is not None:
@@ -143,10 +174,8 @@ class Room:
             for intCorners in interiorRectangle: #Loops through interior rect and removes duplicates
                 if(intCorners in self.corners):
                     self.corners.remove(intCorners)
-                    
                 else: #If not duplicate add
                     cornersToAdd.append(intCorners)
-            
             for intCorner in cornersToAdd:
                 for i, corner in enumerate(self.corners):
                     if i + 1 < len(self.corners):
@@ -158,19 +187,16 @@ class Room:
                             print(f"New list is: {self.corners}")
                             #cornersToAdd.remove(intCorner)
                             break
-                        
+
                 #If not in place adds at end
                 if (intCorner not in self.corners):
                     self.corners.append(intCorner)
-
-            #print(f"List of corners is: {self.corners} otherRoom was: {otherRoom.corners}")
-            #print(f"List of intersects is: {cornersToAdd}")
-
             otherRoom.Delete()
             self.SortCorners()
+            self.floor.MakeRooms()
             return True
         return False
-    
+
     def SortCorners(self):
         """This method sorts all corners starting at the first in the corner list. Each pair is the closest to the previous pair
         sort-corners-fix update: Adds a check to make sure next point is in line with current point (X or Y is same)       
@@ -196,10 +222,7 @@ class Room:
         try:
             tempCorners.remove(pointToAdd)
         except:
-            #print(f"Unexpected error: {pointToAdd} is not in the list {self.corners}")
-            #print(f"tempCorners is: {tempCorners} and inOrderList is: {inOrderList}")
             SystemExit
-        #pointToAdd = None
         directionPointToAdd = 'up'
         direction = None
 
@@ -221,7 +244,7 @@ class Room:
             else:
                 direction = None
                 return None
-            
+
             if (pointToAdd is not None and directionPointToAdd is not None):
             # Check if the direction is the same but the next_point is further than point_to_add
                 if direction == directionPointToAdd:
@@ -263,16 +286,10 @@ class Room:
             try:
                 tempCorners.remove(pointToAdd)
             except:
-                print(f"Unexpected error: {pointToAdd} is not in the list {self.corners}")
-                print(f"tempCorners is: {tempCorners}")
-                #SystemExit
+                SystemExit
             currPoint = pointToAdd
             directionPointToAdd = 'temp'
-            #pointToAdd = None
         self.corners = inOrderList.copy()
-        print(f"Ordered list: {self.corners}")
-
-
         return 1
     
     def RemoveWalls(self, otherRoom, interiorRectangle):
@@ -295,6 +312,7 @@ def main():
         floor = Floor()
             #print(f"This floor should have: {floor.numRooms} rooms")
         floor.MakeRooms() #Creates randomly generated rooms
+        floor.AddStairs()
         floor.Draw()
     
         #print(f"Floor has: {len(floor.rooms)} Rooms")
