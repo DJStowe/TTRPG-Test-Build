@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
 import random
-
+import networkx
 """
 This program generates random maps for TTRPG based on the Nintendo property Pokemon Mystery Dungeon
 TODO List
+Maybe I should create everything as single rectangular rooms then at the end just have a check for if there's overlap 
+    Simplifies everything a bunch. Still keep random width and height 
 Combine rooms sometimes makes weird shapes
-Add start and end stairs. TODO Grab the sprites for those before I delete them
 Make Hallways that connect rooms (Maybe reuse closest point code)
 Little things like dead ends need to exist to be more like the original game
 Make random room locations less random
@@ -30,6 +31,7 @@ class Floor:
         self.cornerX = [0, 100, 100, 0, 0]
         self.cornerY = [0, 0, 100, 100, 0]
         self.numRooms = random.randint(minRooms, maxRooms) 
+        self.hallways = []
 
     def AddRoom(self, *rooms):
         """Adds any amount of rooms 
@@ -53,10 +55,7 @@ class Floor:
             if not any(room.x == x and room.y == y for room in self.rooms):
                 self.AddRoom(Room(x,y))
                 currNumRooms += 1
-            
-        for i, room1 in enumerate(self.rooms):
-            for room2 in self.rooms[i+1:]:
-                room1.Combine(room2)   
+
         return True
     
     def AddStairs(self):
@@ -72,11 +71,12 @@ class Floor:
         roomUp.stairs = 'Up'
         roomDown.stairs = 'Down'
 
-        upX = random.randint(roomUp.x+1, roomUp.x + roomUp.width-1)
-        upY = random.randint(roomUp.y-roomUp.height + 1, roomUp.y-1)
+        upX = random.randint(roomUp.botLeft[0] + 1, roomUp.topRight[0] - 1)
+        upY = random.randint(roomUp.botLeft[1] + 1, roomUp.topRight[1] - 1)
+        downX = random.randint(roomDown.botLeft[0] + 1, roomDown.topRight[0] - 1)
+        downY = random.randint(roomDown.botLeft[1] + 1, roomDown.topRight[1] - 1)
 
-        downX = random.randint(roomDown.x+1, roomDown.x + roomDown.width-1)
-        downY = random.randint(roomDown.y-roomDown.height + 1, roomDown.y-1)
+
         roomUp.stairsXY = (upX,upY)
         roomDown.stairsXY = (downX, downY)
 
@@ -85,7 +85,7 @@ class Floor:
     def Draw(self):
         figure = plt.figure(figsize=(6,6))
         plt.plot(self.cornerX, self.cornerY, color='black')
-
+        hallNumber = 0
         for room in self.rooms:
             if (room.stairs == "Up"):
                 stairUp = room.stairsXY
@@ -94,17 +94,22 @@ class Floor:
                 stairDown = room.stairsXY
                 plt.scatter(stairDown[0], stairDown[1], color='black', s=20)
 
-            if (len(room.corners) > 0): 
-                #seperate lists for x and y coordinates
-                x_coords = [corner[0] for corner in room.corners]
-                y_coords = [corner[1] for corner in room.corners]
+            x_coords = room.botLeft[0], room.topLeft[0], room.topRight[0], room.botRight[0], room.botLeft[0]
+            y_coords = room.botLeft[1], room.topLeft[1], room.topRight[1], room.botRight[1], room.botLeft[1]
+            
 
-                # Add the first corner to close shape
-                x_coords.append(room.corners[0][0])
-                y_coords.append(room.corners[0][1])
+            plt.plot(x_coords, y_coords, color='blue')
+       
+        # Draw hallways
+        if hasattr(self, 'hallways'):  # Check if the 'hallways' attribute exists
+            for hall in self.hallways:
+                startX, startY, endX, endY = hall.startX, hall.startY, hall.endX, hall.endY 
+                #plt.plot([startX, endX], [startY, endY], color='green')  # Draw the hallway line
                 
-                plt.plot(x_coords, y_coords, color='blue')
-                
+                # Draw the hallNumber near the start and end points
+                plt.text(startX, startY, str(hallNumber), color='green', fontsize=12)
+                plt.text(endX, endY, str(hallNumber), color='green', fontsize=12)
+                hallNumber += 1  # Increment the hall number for the next hallway
 
         xlim = plt.xlim(-10, 110)            # Set x-axis limits
         ylim = plt.ylim(-10, 110)            # Set y-axis limits
@@ -113,7 +118,23 @@ class Floor:
     def RemoveRoom(self, room):
         self.rooms.remove(room)
 
+    def AddHallways(self):
+        #closestRoom = self
 
+        for room in self.rooms:
+            #Get closet room with no hall between
+            closestRoom = room.FindClosest()
+            if room is closestRoom or closestRoom in room.overlap:
+                continue
+            #pick proper wall
+            #Call AddDoor on each wall
+            room.AddDoorBetween(closestRoom)
+            #pick midpoint between rooms
+            #Add hall straight from door to midpoint and midpoint to other door
+        return -1
+    
+
+    
 class Room:
     """
     Updating room class to a new implementation. I do not need the mid point so we will instead track an X,Y pair for the top left corner of each room
@@ -127,16 +148,112 @@ class Room:
         self.y = y
         self.width = random.randint(minRoomVariance, maxRoomVariance)
         self.height = random.randint(minRoomVariance, maxRoomVariance)
-        self.corners = []
         self.floor = None
+        self.overlap = []
         self.stairs = None
         self.stairsXY = None
+        self.connectedRooms = []
+        self.numHalls = 0
+        self.doors = []
 
-        self.corners.append((self.x, self.y))
-        self.corners.append((self.x + self.width, self.y))
-        self.corners.append((self.x + self.width,self.y - self.height)) 
-        self.corners.append((self.x , self.y - self.height))
+        self.botLeft  = (self.x, self.y)
+        self.topLeft  = (self.x, self.y + self.height)
+        self.botRight = (self.x + self.width, self.y)
+        self.topRight = (self.x + self.width, self.y + self.height)
         
+        
+    """
+    Finds the closest room that is not already connected by a hallway
+
+    returns:
+        closestRoom - the room object with start points closest to that of the current room
+    Limitations:
+        Does not actually return the closest based on total size of the rooms, only returns the closest starting point
+    """
+    def FindClosest(self):
+        closestRoom = self
+        closestDist = float('inf')
+        currDist = 0
+        for currroom in self.floor.rooms:
+            #Ignore if same Room, already connected or overlapping
+            if currroom == self or currroom in self.connectedRooms or currroom in self.overlap:
+                continue
+            currDist = ManDistance(self.x, self.y, currroom.x, currroom.y)
+            if currDist < closestDist:
+                closestDist = currDist
+                closestRoom = currroom
+        #print(f"The closest room to: {self.botLeft} is: {closestRoom.botLeft} and they are {closestDist} spaces apart")
+        return closestRoom
+
+
+    def AddDoorBetween(self, otherRoom):
+        minDistance = float('inf')
+
+        room1Doors = []
+        room2Doors = []
+        #Add door to each side of each room. 
+        #Check which is closest. Add those to rooms
+        #Then create hallway from those
+
+        topDoor = (random.randint(self.topLeft[0], self.topRight[0]), self.topLeft[1])
+        botDoor = (random.randint(self.botLeft[0], self.botRight[0]), self.botLeft[1])
+
+        leftDoor  = (self.botLeft[0],  random.randint(self.botLeft[1], self.topLeft[1]))
+        rightDoor = (self.botRight[0], random.randint(self.botRight[1], self.topRight[1]))
+        
+        OtopDoor = (random.randint(otherRoom.topLeft[0], otherRoom.topRight[0]), otherRoom.topLeft[1])
+        ObotDoor = (random.randint(otherRoom.botLeft[0], otherRoom.botRight[0]), otherRoom.botLeft[1])
+        OleftDoor  = (otherRoom.botLeft[0],  random.randint(otherRoom.botLeft[1], otherRoom.topLeft[1]))
+        OrightDoor = (otherRoom.botRight[0], random.randint(otherRoom.botRight[1], otherRoom.topRight[1]))
+        
+        room1Doors.extend([topDoor,botDoor,leftDoor,rightDoor])
+        room2Doors.extend([OtopDoor,ObotDoor,OleftDoor,OrightDoor])
+
+        for door1 in room1Doors:
+            for door2 in room2Doors:
+                currDistance = ManDistance(door1[0], door1[1], door2[0], door2[1])
+                if currDistance < minDistance:
+                    minDistance = currDistance
+                    selfDoor = door1
+                    otherDoor = door2
+        
+#This is to find midpoint if I want that 
+        if(selfDoor[0] == self.botLeft[0]):
+            selfWall = 'left'
+        if (selfDoor[0] == self.botRight[0]):
+            selfWall = 'right'
+        if (selfDoor[1] == self.topLeft[1]):
+            selfWall = 'top'
+        if (selfDoor[1] == self.botLeft[1]):
+            selfWall = 'bottom'
+
+        if(otherDoor[0] == otherRoom.botLeft[0]):
+            endWall = 'left'
+        if (otherDoor[0] == otherRoom.botRight[0]):
+            endWall = 'right'
+        if (otherDoor[1] == otherRoom.topLeft[1]):
+            endWall = 'top'
+        if (otherDoor[1] == otherRoom.botLeft[1]):
+            endWall = 'bottom'
+
+
+
+        
+        
+        #midpoint = [midX, midY]
+        
+        print(f"Created a new hallway from {selfDoor} to {otherDoor}")
+        #print(f"Midpoint is: {midpoint}")
+        self.connectedRooms.append(otherRoom)
+        otherRoom.connectedRooms.append(self)
+        #Create new Hallway obj start, mid, end
+        newHall = Hallway(selfDoor[0], selfDoor[1], otherDoor[0], otherDoor[1])
+        self.floor.hallways.append(newHall)
+        #newHall.joints.append(midpoint)
+        #Decide what to return
+        return True    
+
+
     def Intersect(self, otherRoom):
         """Finds if two rooms intersect. If so returns the coordinates for the intesecting rectangle 
         
@@ -160,189 +277,87 @@ class Room:
         # Returns overlapping rectangle corners
         return interiorRectangle
     
-    """
-    Logic looks funny here but basically 
-    if intersect combine lists check if in interior rectangle and if it is remove it from the lists
-    This removes the inside corners while adding the corners on the edges
-    """
-    def Combine(self, otherRoom):
-        interiorRectangle = self.Intersect(otherRoom)
-        cornersToAdd = []
-        #print(f"Interior Rect is: {interiorRectangle}")
-        if interiorRectangle is not None:
-            self.corners.extend(otherRoom.corners) #Add room2 corners to room1 corners list
-            for intCorners in interiorRectangle: #Loops through interior rect and removes duplicates
-                if(intCorners in self.corners):
-                    self.corners.remove(intCorners)
-                else: #If not duplicate add
-                    cornersToAdd.append(intCorners)
-            for intCorner in cornersToAdd:
-                for i, corner in enumerate(self.corners):
-                    if i + 1 < len(self.corners):
-                        nextCorner = self.corners[i+1]
-                        if((intCorner[0] == corner[0]) and (intCorner[1] == nextCorner[1])):
-                            #Insert into this location then break?
-                            print(f"Adding corner {intCorner} from list: {cornersToAdd} to index {i + 1} in list {self.corners}")
-                            self.corners.insert(i+1, intCorner)
-                            print(f"New list is: {self.corners}")
-                            #cornersToAdd.remove(intCorner)
-                            break
-
-                #If not in place adds at end
-                if (intCorner not in self.corners):
-                    self.corners.append(intCorner)
-            otherRoom.Delete()
-            self.SortCorners()
-            self.floor.MakeRooms()
-            return True
-        return False
-
-    def SortCorners(self):
-        """This method sorts all corners starting at the first in the corner list. Each pair is the closest to the previous pair
-        sort-corners-fix update: Adds a check to make sure next point is in line with current point (X or Y is same)       
-        Args:
-            none
-        Returns:
-            bool: True when no errors occur
-        """
-        tempCorners = self.corners.copy()
-        inOrderList = []
-        pointsAdded = 0
-        minX = min(corner[0] for corner in self.corners)
-        maxY = max(corner[1] for corner in self.corners)
-        topLeft = (minX, maxY)
-        #TODO Idk if this fixes anything
-        if topLeft not in tempCorners:
-            topLeft = tempCorners[0]
-
-        currPoint = topLeft
-        pointToAdd = topLeft
-        inOrderList.append(pointToAdd)
-        pointsAdded += 1
-        try:
-            tempCorners.remove(pointToAdd)
-        except:
-            SystemExit
-        directionPointToAdd = 'up'
-        direction = None
-
-        #Returns direction or None if directionPointToAdd is higher priority
-        #Also returns None if the pointToAdd is in the same direction and closer to the currPoint
-        def FindDirection(currPoint, nextPoint, directionPointToAdd, pointToAdd):
-            direction = None
-            sameY = currPoint[1] == nextPoint[1]
-            sameX = currPoint[0] == nextPoint[0]
-
-            if ((nextPoint[0] - currPoint[0] > 0) and sameY):
-                direction = 'right'
-            elif((nextPoint[0] - currPoint[0] < 0) and sameY):
-                direction = 'left'
-            elif((nextPoint[1] - currPoint[1] > 0) and sameX):
-                direction = 'up'
-            elif((nextPoint[1] - currPoint[1] < 0) and sameX):
-                direction = 'down'
-            else:
-                direction = None
-                return None
-
-            if (pointToAdd is not None and directionPointToAdd is not None):
-            # Check if the direction is the same but the next_point is further than point_to_add
-                if direction == directionPointToAdd:
-                    if direction in ['right', 'left']:
-                        if abs(pointToAdd[0] - currPoint[0]) < abs(nextPoint[0] - currPoint[0]):
-                            return None
-                    elif direction in ['up', 'down']:
-                        if (pointToAdd[1] - currPoint[1]) < abs(nextPoint[1] - currPoint[1]):
-                            return None
-            return direction
-
-        while pointsAdded < len(self.corners):
-            for corner in tempCorners:
-                direction = FindDirection(currPoint, corner, directionPointToAdd, pointToAdd)
-                match direction:
-                    case None:
-                        pointToAdd = pointToAdd
-                    case 'right':
-                        pointToAdd = corner
-                        directionPointToAdd = 'right'
-                    case 'down':
-                        if (directionPointToAdd not in {'right'}):
-                            pointToAdd = corner
-                            directionPointToAdd = 'down'
-                    case 'left':
-                        if (directionPointToAdd not in {'right', 'down'}):
-                            pointToAdd = corner
-                            directionPointToAdd = 'left'
-
-                    case 'up':
-                        if (directionPointToAdd not in {'right', 'down', 'left'}):
-                            pointToAdd = corner
-                            directionPointToAdd = 'up'    
-
-            #TODO Fix bug that writes the same number over and over here
-            inOrderList.append(pointToAdd)
-            pointsAdded += 1
-            
-            try:
-                tempCorners.remove(pointToAdd)
-            except:
-                SystemExit
-            currPoint = pointToAdd
-            directionPointToAdd = 'temp'
-        self.corners = inOrderList.copy()
-        return 1
-    
     def RemoveWalls(self, otherRoom, interiorRectangle):
         
         return -1
     
     #TODO    
     def Delete(self):
-        if (self.floor and self.corners is not None):
+        if (self.floor):
             self.floor.RemoveRoom(self)
-        self.corners = None
         return 1    
 
 
+class Hallway:
+    def __init__(self, startX, startY, endX, endY):
+        self.startX = startX
+        self.startY = startY
+        self.endX = endX
+        self.endY = endY
+        self.joints = []
+
+        self.floor = None
+
+
+#Manhattan Distance - count diagonals as 2 
+def ManDistance(x1,y1,x2,y2):
+    return abs(x2 - x1) + abs(y2 - y1)
+
+def Random(x, y):
+    if(x > y):
+        return(random.randint(y,x))
+    else:
+        return(random.randint(x,y))
+
+#Returns direction or None if directionPointToAdd is higher priority
+        #Also returns None if the pointToAdd is in the same direction and closer to the currPoint
+def FindDirection(currPoint, nextPoint, directionPointToAdd, pointToAdd):
+    direction = None
+    sameY = currPoint[1] == nextPoint[1]
+    sameX = currPoint[0] == nextPoint[0]
+
+    if ((nextPoint[0] - currPoint[0] > 0) and sameY):
+        direction = 'right'
+    elif((nextPoint[0] - currPoint[0] < 0) and sameY):
+        direction = 'left'
+    elif((nextPoint[1] - currPoint[1] > 0) and sameX):
+        direction = 'up'
+    elif((nextPoint[1] - currPoint[1] < 0) and sameX):
+        direction = 'down'
+    else:
+        direction = None
+        return None
+
+    if (pointToAdd is not None and directionPointToAdd is not None):
+    # Check if the direction is the same but the next_point is further than point_to_add
+        if direction == directionPointToAdd:
+            if direction in ['right', 'left']:
+                if abs(pointToAdd[0] - currPoint[0]) < abs(nextPoint[0] - currPoint[0]):
+                    return None
+            elif direction in ['up', 'down']:
+                if (pointToAdd[1] - currPoint[1]) < abs(nextPoint[1] - currPoint[1]):
+                    return None
+    return direction
 
 def main():
 
-    i = 0
-    while i < 10:
-        floor = Floor()
-            #print(f"This floor should have: {floor.numRooms} rooms")
-        floor.MakeRooms() #Creates randomly generated rooms
-        floor.AddStairs()
-        floor.Draw()
-    
-        #print(f"Floor has: {len(floor.rooms)} Rooms")
-        #input(f"Press Enter...")
-        i+= 1
-    
+    floor = Floor()
+        #print(f"This floor should have: {floor.numRooms} rooms")
+    #floor.MakeRooms() #Creates randomly generated rooms
+    #floor.AddStairs()
+    #floor.AddHallways()
+    #floor.Draw()
+    #print("Done")
+
 #Testin purposes:
     #region
-    #room1 = Room(0,20)
-    #room2 = Room(58, 43)
-    #room3 = Room(2, 15)
-    #room4 = Room(53,28)
+    room1 = Room(20, 20)
+    room2 = Room(50, 50)
+    room3 = Room(10, 50)
     
-    #floor.AddRoom(room1, room2, room3)
-
-    # Iterate through each pair of rooms
-    #for i, room1 in enumerate(floor.rooms):
-        #for room2 in floor.rooms[i+1:]:
-            #room1.Combine(room2)
-
-  
-    #floor.rectangles = floor.rooms.copy()
-
-    #floor.CombineRooms()
-    #for rooms in overlaps:
-        #print(f"These rooms overlap: {rooms[0].middle}, {rooms[1].middle}")
-    #room1.SortCorners()
-    #endregion
-    #floor.Draw()
-
+    floor.AddRoom(room1, room2, room3)
+    floor.AddHallways()
+    floor.Draw()
     return 1
 
 if __name__ == '__main__':
