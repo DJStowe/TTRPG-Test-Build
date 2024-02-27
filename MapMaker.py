@@ -4,10 +4,8 @@ import networkx
 """
 This program generates random maps for TTRPG based on the Nintendo property Pokemon Mystery Dungeon
 TODO List
-Maybe I should create everything as single rectangular rooms then at the end just have a check for if there's overlap 
-    Simplifies everything a bunch. Still keep random width and height 
-Combine rooms sometimes makes weird shapes
-Make Hallways that connect rooms (Maybe reuse closest point code)
+Fix Hallways so they actually are attached
+Decide if each class should have a list of tiles in it and add those for everything
 Little things like dead ends need to exist to be more like the original game
 Make random room locations less random
 Add a hashing alg to convert string to seed (Probably something standard like SHA256 so pythonversions don't chenge the values) 
@@ -25,13 +23,63 @@ maxRoomVariance = 12
 
 
 class Floor:
-    def __init__(self):
+    def __init__(self, width=100, height=100):
         self.rooms = []
-        self.rectangles = [] #TODO decide if we need this. It can allow us to track combined rooms as two smaller rooms
-        self.cornerX = [0, 100, 100, 0, 0]
-        self.cornerY = [0, 0, 100, 100, 0]
+
+        #self.cornerX = [0, 100, 100, 0, 0]
+        #self.cornerY = [0, 0, 100, 100, 0]
+        self.width = width
+        self.height = height
         self.numRooms = random.randint(minRooms, maxRooms) 
         self.hallways = []
+        self.tiles = []
+
+        self.CreateTiles()
+        self.MakeRooms()
+        self.AddHallways()
+        self.AddStairs()
+        #self.AltDraw()
+
+    def CreateTiles(self):
+        x, y = 0, 0
+        while(x < self.width):
+            y = 0
+            while(y < self.height):
+                newTile = Tile(x,y)
+                self.tiles.append(newTile)
+                y += 1
+            x += 1
+        return True
+    
+    def getTile(self, x, y):
+        return self.tiles[y * self.width + x]
+
+    def setTile(self, x, y, tileType):
+        if(x <= self.width and y <= self.height):
+            self.tiles[y * self.width + x].type = tileType
+        else:
+            return False
+
+    def setTilesLine(self, x1, y1, x2, y2, tileType):
+        if x1 == x2: #Vertical Line
+            start_y = min(y1, y2)  
+            end_y = max(y1, y2) 
+            for y in range(start_y, end_y + 1):  
+                self.tiles[y * self.width + x1].type = tileType
+        
+        elif y1 == y2: #Horizontal Line
+            start_x = min(x1, x2)  
+            end_x = max(x1, x2)  
+
+            for x in range(start_x, end_x + 1):  
+                self.tiles[y1 * self.width + x].type = tileType
+
+    def setTileIf(self, x, y, typeToReplace, tileType):
+        if(self.getTile(x, y).type == typeToReplace):
+            self.setTile(x, y, tileType)
+        else:
+            #print(f"Cannot make tile ({x}, {y}) a {tileType} because it is not {typeToReplace}")
+            return False
 
     def AddRoom(self, *rooms):
         """Adds any amount of rooms 
@@ -53,11 +101,12 @@ class Floor:
             
             # Check if the coordinate is not used then create room
             if not any(room.x == x and room.y == y for room in self.rooms):
-                self.AddRoom(Room(x,y))
+                self.AddRoom(Room(self, x,y))
                 currNumRooms += 1
 
         return True
     
+
     def AddStairs(self):
         #Picks random rooms for stairs
         roomNumUp = random.randint(0, self.numRooms - 1) 
@@ -76,59 +125,47 @@ class Floor:
         downX = random.randint(roomDown.botLeft[0] + 1, roomDown.topRight[0] - 1)
         downY = random.randint(roomDown.botLeft[1] + 1, roomDown.topRight[1] - 1)
 
-
-        roomUp.stairsXY = (upX,upY)
-        roomDown.stairsXY = (downX, downY)
+        self.setTile(upX, upY, 'stairsUp')
+        self.setTile(downX, downY, 'stairsDown')
 
         return (roomNumUp, roomNumDown)
 
+    def AltDraw(self):
+        x, y, count = 0, 0, 0
+        line =  []
+        for tiles in self.tiles:
+            if tiles.type == 'wall':
+                line.append('w')
+            elif tiles.type == 'floor':
+                line.append('f')
+            elif tiles.type == 'stairsUp':
+                line.append('u')
+            elif tiles.type == 'stairsDown':
+                line.append('d')
+            elif tiles.type == 'door':
+                line.append('0')
+            else:
+                line.append('?')
+            count += 1
+            if count >= 100:
+                print(''.join(line))
+                line.clear()
+                count = 0
+        return True
+
     def Draw(self):
-        figure = plt.figure(figsize=(6,6))
-        plt.plot(self.cornerX, self.cornerY, color='black')
-        hallNumber = 0
-        for room in self.rooms:
-            if (room.stairs == "Up"):
-                stairUp = room.stairsXY
-                plt.scatter(stairUp[0], stairUp[1], color='red', s=20)
-            if (room.stairs == "Down"):
-                stairDown = room.stairsXY
-                plt.scatter(stairDown[0], stairDown[1], color='black', s=20)
-
-            x_coords = room.botLeft[0], room.topLeft[0], room.topRight[0], room.botRight[0], room.botLeft[0]
-            y_coords = room.botLeft[1], room.topLeft[1], room.topRight[1], room.botRight[1], room.botLeft[1]
-            
-
-            plt.plot(x_coords, y_coords, color='blue')
-       
-        # Draw hallways
-        if hasattr(self, 'hallways'):  # Check if the 'hallways' attribute exists
-            for hall in self.hallways:
-                startX, startY, endX, endY = hall.startX, hall.startY, hall.endX, hall.endY 
-                #plt.plot([startX, endX], [startY, endY], color='green')  # Draw the hallway line
-                
-                # Draw the hallNumber near the start and end points
-                plt.text(startX, startY, str(hallNumber), color='green', fontsize=12)
-                plt.text(endX, endY, str(hallNumber), color='green', fontsize=12)
-                
-                for joints in hall.joints:
-                    plt.scatter(joints[0], joints[1], color='black', s=20)
-
-                hallNumber += 1  # Increment the hall number for the next hallway
-
-        xlim = plt.xlim(-10, 110)            # Set x-axis limits
-        ylim = plt.ylim(-10, 110)            # Set y-axis limits
-        plt.show
+        return 1
 
     def RemoveRoom(self, room):
         self.rooms.remove(room)
+        for tile in room.tiles:
+            self.setTile(tile.x, tile.y, 'wall')
 
     def AddHallways(self):
-        #closestRoom = self
-
         for room in self.rooms:
             #Get closet room with no hall between
             closestRoom = room.FindClosest()
-            if room is closestRoom or closestRoom in room.overlap:
+            if room is closestRoom:
                 continue
             hallway = room.AddDoorBetween(closestRoom)
             room.ConnectHallway(closestRoom, hallway)
@@ -147,15 +184,14 @@ class Room:
     Args:
         middle: list of 2 ints treated as X,Y coordinates
     """
-    def __init__(self, x, y):
+    def __init__(self, floor, x, y):
         self.x = x
         self.y = y
         self.width = random.randint(minRoomVariance, maxRoomVariance)
         self.height = random.randint(minRoomVariance, maxRoomVariance)
-        self.floor = None
-        self.overlap = []
+        self.floor = floor
+        self.tiles = []
         self.stairs = None
-        self.stairsXY = None
         self.connectedRooms = []
         self.numHalls = 0
         self.doors = []
@@ -164,23 +200,32 @@ class Room:
         self.topLeft  = (self.x, self.y + self.height)
         self.botRight = (self.x + self.width, self.y)
         self.topRight = (self.x + self.width, self.y + self.height)
-        
-        
-    """
-    Finds the closest room that is not already connected by a hallway
+        self.AssignTiles()
 
-    returns:
-        closestRoom - the room object with start points closest to that of the current room
-    Limitations:
-        Does not actually return the closest based on total size of the rooms, only returns the closest starting point
-    """
+    def AssignTiles(self):
+        for dx in range(self.width):
+            for dy in range(self.height):
+                x = self.x + dx
+                y = self.y + dy
+                # Ensure x, y are within floor bounds before setting the tile
+                if 0 <= x < self.floor.width and 0 <= y < self.floor.height:
+                    self.floor.setTile(x, y, 'floor')        
+
     def FindClosest(self):
+        """
+        Finds the closest room that is not already connected by a hallway
+
+        returns:
+            closestRoom - the room object with start points closest to that of the current room
+        Limitations:
+            Does not actually return the closest based on total size of the rooms, only returns the closest starting point
+        """
         closestRoom = self
         closestDist = float('inf')
         currDist = 0
         for currroom in self.floor.rooms:
-            #Ignore if same Room, already connected or overlapping
-            if currroom == self or currroom in self.connectedRooms or currroom in self.overlap:
+            #Ignore if same Room, already connected 
+            if currroom == self or currroom in self.connectedRooms:
                 continue
             currDist = ManDistance(self.x, self.y, currroom.x, currroom.y)
             if currDist < closestDist:
@@ -189,13 +234,11 @@ class Room:
         #print(f"The closest room to: {self.botLeft} is: {closestRoom.botLeft} and they are {closestDist} spaces apart")
         return closestRoom
 
-
     def AddDoorBetween(self, otherRoom):
         minDistance = float('inf')
-
         room1Doors = []
         room2Doors = []
-        #Add door to each side of each room. 
+        #Add door to each side of both rooms
         #Check which is closest. Add those to rooms
         #Then create hallway from those
 
@@ -220,41 +263,12 @@ class Room:
                     minDistance = currDistance
                     selfDoor = door1
                     otherDoor = door2
-        
-#This is to find midpoint if I want that It does not work yet
-        """
-        if(selfDoor[0] == self.botLeft[0]):
-            selfWall = 'left'
-        if (selfDoor[0] == self.botRight[0]):
-            selfWall = 'right'
-        if (selfDoor[1] == self.topLeft[1]):
-            selfWall = 'top'
-        if (selfDoor[1] == self.botLeft[1]):
-            selfWall = 'bottom'
 
-        if(otherDoor[0] == otherRoom.botLeft[0]):
-            endWall = 'left'
-        if (otherDoor[0] == otherRoom.botRight[0]):
-            endWall = 'right'
-        if (otherDoor[1] == otherRoom.topLeft[1]):
-            endWall = 'top'
-        if (otherDoor[1] == otherRoom.botLeft[1]):
-            endWall = 'bottom'
-        """
-
-        #midpoint = [midX, midY]
-        
-        print(f"Created a new hallway from {selfDoor} to {otherDoor}")
-        #print(f"Midpoint is: {midpoint}")
         self.connectedRooms.append(otherRoom)
         otherRoom.connectedRooms.append(self)
-        #Create new Hallway obj start, mid, end
-        newHall = Hallway(selfDoor[0], selfDoor[1], otherDoor[0], otherDoor[1])
+        newHall = Hallway(self.floor, selfDoor[0], selfDoor[1], otherDoor[0], otherDoor[1])
         self.floor.hallways.append(newHall)
-        #newHall.joints.append(midpoint)
-        #Decide what to return
-        return newHall    
-
+        return newHall
 
     def Intersect(self, otherRoom):
         """Finds if two rooms intersect. If so returns the coordinates for the intesecting rectangle 
@@ -278,12 +292,8 @@ class Room:
         interiorRectangle.append((x_left, y_bottom))
         # Returns overlapping rectangle corners
         return interiorRectangle
+
     
-    def RemoveWalls(self, otherRoom, interiorRectangle):
-        
-        return -1
-    
-    #TODO    
     def Delete(self):
         if (self.floor):
             self.floor.RemoveRoom(self)
@@ -293,71 +303,89 @@ class Room:
         midpoint = (0, 0)
         wall, otherWall = 'temp', 'temp'
         firstTileSelf, firstTileOther = 0, 0
-        
+        intersect1 = []
+        intersect2 = []
+
         if(hallway.startX == self.botLeft[0]):
             wall = 'left'
             firstTileSelf = (hallway.startX - 1, hallway.startY)
-            hallway.joints.append(firstTileSelf)
+            hallway.tiles.append(firstTileSelf)
         elif(hallway.startX == self.botRight[0]):
             wall = 'right'
             firstTileSelf = (hallway.startX + 1, hallway.startY)
-            hallway.joints.append(firstTileSelf)
+            hallway.tiles.append(firstTileSelf)
         elif(hallway.startY == self.botLeft[1]):
             wall = 'bottom'
             firstTileSelf = (hallway.startX, hallway.startY - 1)
-            hallway.joints.append(firstTileSelf)
+            hallway.tiles.append(firstTileSelf)
         elif(hallway.startY == self.topRight[1]):
             wall = 'top'
             firstTileSelf = (hallway.startX, hallway.startY + 1)
-            hallway.joints.append(firstTileSelf)
+            hallway.tiles.append(firstTileSelf)
 
         if(hallway.endX == otherRoom.botLeft[0]):
             otherWall = 'left'
             firstTileOther = (hallway.endX - 1, hallway.endY)
-            hallway.joints.append()
+            hallway.tiles.append(firstTileOther)
         elif(hallway.endX == otherRoom.botRight[0]):
             otherWall = 'right'
             firstTileOther = (hallway.endX + 1, hallway.endY)
-            hallway.joints.append(firstTileOther)
+            hallway.tiles.append(firstTileOther)
         elif(hallway.endY == otherRoom.botLeft[1]):
             otherWall = 'bottom'
             firstTileOther = (hallway.endX, hallway.endY - 1)
-            hallway.joints.append(firstTileOther)
+            hallway.tiles.append(firstTileOther)
         elif(hallway.endY == otherRoom.topRight[1]):
             otherWall = 'top'
             firstTileOther = (hallway.endX, hallway.endY + 1)
-            hallway.joints.append(firstTileOther)
+            hallway.tiles.append(firstTileOther)
 
-        for joint in hallway.joints:
-            for nextJoint in hallway.joints:
-                if joint == nextJoint:
+        for tile in hallway.tiles:
+            for nextTile in hallway.tiles:
+                if tile == nextTile:
                     continue
-                midX = Random(joint[0], nextJoint[0])
-                midY = Random(joint[1], nextJoint[1])
+                midX = Random(tile[0], nextTile[0])
+                midY = Random(tile[1], nextTile[1])
                 midpoint = (midX, midY)
         if(wall in {'left', 'right'}):
-            hallway.joints.append((midpoint[0], firstTileSelf[1]))
+            intersect1 = (midpoint[0], firstTileSelf[1])
         elif(wall in {'top', 'bottom'}):
-            hallway.joints.append((firstTileSelf[0], midpoint[1]))
+            intersect1 = (firstTileSelf[0], midpoint[1])
 
         if(otherWall in {'left', 'right'}):
-            hallway.joints.append((midpoint[0], firstTileOther[1]))
+            intersect2 = (midpoint[0], firstTileOther[1])
         elif(otherWall in {'top', 'bottom'}):
-            hallway.joints.append((firstTileOther[0], midpoint[1]))
+            intersect2 = (firstTileOther[0], midpoint[1])
 
+
+        self.floor.setTilesLine(firstTileSelf[0], firstTileSelf[1], intersect1[0], intersect1[1], 'floor')
+        self.floor.setTilesLine(firstTileOther[0], firstTileOther[1], intersect2[0], intersect2[1], 'floor')
+        self.floor.setTilesLine(intersect1[0], intersect1[1], intersect2[0], intersect2[1], 'floor')
 
         return hallway
 
 class Hallway:
-    def __init__(self, startX, startY, endX, endY):
+    def __init__(self, floor, startX, startY, endX, endY):
         self.startX = startX
         self.startY = startY
         self.endX = endX
         self.endY = endY
-        self.joints = []
+        self.tiles = []
 
-        self.floor = None
+        self.floor = floor
+        self.tiles.append((startX, startY))
+        self.tiles.append((endX, endY))
+        self.AssignTiles()
+    
+    def AssignTiles(self):
+        self.floor.setTileIf(self.startX, self.startY, 'wall', 'door')
+        self.floor.setTileIf(self.endX, self.endY, 'wall', 'door')
 
+class Tile:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.type = 'wall'
 
 #Manhattan Distance - count diagonals as 2 
 def ManDistance(x1,y1,x2,y2):
@@ -371,56 +399,3 @@ def Random(x, y):
     else:
         return(random.randint(x,y))
 
-#Returns direction or None if directionPointToAdd is higher priority
-        #Also returns None if the pointToAdd is in the same direction and closer to the currPoint
-def FindDirection(currPoint, nextPoint, directionPointToAdd, pointToAdd):
-    direction = None
-    sameY = currPoint[1] == nextPoint[1]
-    sameX = currPoint[0] == nextPoint[0]
-
-    if ((nextPoint[0] - currPoint[0] > 0) and sameY):
-        direction = 'right'
-    elif((nextPoint[0] - currPoint[0] < 0) and sameY):
-        direction = 'left'
-    elif((nextPoint[1] - currPoint[1] > 0) and sameX):
-        direction = 'up'
-    elif((nextPoint[1] - currPoint[1] < 0) and sameX):
-        direction = 'down'
-    else:
-        direction = None
-        return None
-
-    if (pointToAdd is not None and directionPointToAdd is not None):
-    # Check if the direction is the same but the next_point is further than point_to_add
-        if direction == directionPointToAdd:
-            if direction in ['right', 'left']:
-                if abs(pointToAdd[0] - currPoint[0]) < abs(nextPoint[0] - currPoint[0]):
-                    return None
-            elif direction in ['up', 'down']:
-                if (pointToAdd[1] - currPoint[1]) < abs(nextPoint[1] - currPoint[1]):
-                    return None
-    return direction
-
-def main():
-
-    floor = Floor()
-        #print(f"This floor should have: {floor.numRooms} rooms")
-    #floor.MakeRooms() #Creates randomly generated rooms
-    #floor.AddStairs()
-    #floor.AddHallways()
-    #floor.Draw()
-    #print("Done")
-
-#Testin purposes:
-    #region
-    room1 = Room(20, 20)
-    room2 = Room(50, 50)
-    room3 = Room(10, 50)
-    
-    floor.AddRoom(room1, room2, room3)
-    floor.AddHallways()
-    floor.Draw()
-    return 1
-
-if __name__ == '__main__':
-    main()
