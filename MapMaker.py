@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import random
-import networkx
+
 """
 This program generates random maps for TTRPG based on the Nintendo property Pokemon Mystery Dungeon
 TODO List
@@ -41,21 +41,27 @@ class Floor:
         #self.AltDraw()
 
     def CreateTiles(self):
-        x, y = 0, 0
-        while(x < self.width):
-            y = 0
-            while(y < self.height):
-                newTile = Tile(x,y)
+        x,y = 0,0
+        while(y < self.height):
+            x = 0
+            while(x < self.width):
+                newTile = Tile(self, x,y)
                 self.tiles.append(newTile)
-                y += 1
-            x += 1
+                x += 1
+            y += 1
+        #Setters for tile above, below, left, right
+        for tile in self.tiles:
+            tile.AssignNeighbors()
         return True
     
     def getTile(self, x, y):
-        return self.tiles[y * self.width + x]
+        if 0 <= x < self.width and 0 <= y <self.height:
+            return self.tiles[y * self.width + x]
+        else:
+            return None
 
     def setTile(self, x, y, tileType):
-        if(x <= self.width and y <= self.height):
+        if 0 <= x < self.width and 0 <= y <self.height:
             self.tiles[y * self.width + x].type = tileType
         else:
             return False
@@ -65,21 +71,22 @@ class Floor:
             start_y = min(y1, y2)  
             end_y = max(y1, y2) 
             for y in range(start_y, end_y + 1):  
-                self.tiles[y * self.width + x1].type = tileType
+                self.setTile(x1, y, tileType)
         
         elif y1 == y2: #Horizontal Line
             start_x = min(x1, x2)  
             end_x = max(x1, x2)  
 
             for x in range(start_x, end_x + 1):  
-                self.tiles[y1 * self.width + x].type = tileType
+                self.setTile(x, y1, tileType)
 
     def setTileIf(self, x, y, typeToReplace, tileType):
-        if(self.getTile(x, y).type == typeToReplace):
-            self.setTile(x, y, tileType)
-        else:
-            #print(f"Cannot make tile ({x}, {y}) a {tileType} because it is not {typeToReplace}")
-            return False
+        if 0 <= x < self.width and 0 <= y <self.height:
+            if(self.getTile(x, y).type == typeToReplace):
+                self.setTile(x, y, tileType)
+            else:
+                #print(f"Cannot make tile ({x}, {y}) a {tileType} because it is not {typeToReplace}")
+                return False
 
     def AddRoom(self, *rooms):
         """Adds any amount of rooms 
@@ -168,7 +175,7 @@ class Floor:
             if room is closestRoom:
                 continue
             hallway = room.AddDoorBetween(closestRoom)
-            room.ConnectHallway(closestRoom, hallway)
+            #room.ConnectHallway(closestRoom, hallway)
             #pick midpoint between rooms
             #Add hall straight from door to midpoint and midpoint to other door
 
@@ -267,6 +274,7 @@ class Room:
         self.connectedRooms.append(otherRoom)
         otherRoom.connectedRooms.append(self)
         newHall = Hallway(self.floor, selfDoor[0], selfDoor[1], otherDoor[0], otherDoor[1])
+        #print(f"Creating hallway from {selfDoor} to {otherDoor}")
         self.floor.hallways.append(newHall)
         return newHall
 
@@ -375,17 +383,57 @@ class Hallway:
         self.floor = floor
         self.tiles.append((startX, startY))
         self.tiles.append((endX, endY))
+        self.CreateHallway()
         self.AssignTiles()
     
+    def CreateHallway(self):
+
+        tileCurr = self.floor.getTile(self.startX, self.startY)
+        destTile = self.floor.getTile(self.endX, self.endY)
+        distance = tileCurr.Distance(destTile)
+
+        while(distance > 0):
+            if(destTile.Distance(tileCurr.above) < distance): 
+                self.floor.setTile(tileCurr.above.x, tileCurr.above.y, 'floor')
+                tileCurr = tileCurr.above
+            elif(destTile.Distance(tileCurr.below) < distance):
+                self.floor.setTile(tileCurr.below.x, tileCurr.below.y, 'floor')
+                tileCurr = tileCurr.below
+            elif(destTile.Distance(tileCurr.right) < distance):
+                self.floor.setTile(tileCurr.right.x, tileCurr.right.y, 'floor')
+                tileCurr = tileCurr.right
+            elif(destTile.Distance(tileCurr.left) < distance):
+                self.floor.setTile(tileCurr.left.x, tileCurr.left.y, 'floor')
+                tileCurr = tileCurr.left
+            self.tiles.append(tileCurr)
+            distance = tileCurr.Distance(destTile)
+
+
     def AssignTiles(self):
         self.floor.setTileIf(self.startX, self.startY, 'wall', 'door')
         self.floor.setTileIf(self.endX, self.endY, 'wall', 'door')
 
 class Tile:
-    def __init__(self, x, y):
+    def __init__(self, floor, x, y):
         self.x = x
         self.y = y
         self.type = 'wall'
+        self.floor = floor
+
+        self.above = None
+        self.below = None
+        self.right = None
+        self.left  = None
+
+    def AssignNeighbors(self):
+        self.right = self.floor.getTile(self.x + 1, self.y)
+        self.left = self.floor.getTile(self.x - 1, self.y)
+        self.above = self.floor.getTile(self.x, self.y - 1)
+        self.below = self.floor.getTile(self.x, self.y + 1)
+    
+    def Distance(self, otherTile):
+        return abs(otherTile.x - self.x) + abs(otherTile.y - self.y)
+
 
 #Manhattan Distance - count diagonals as 2 
 def ManDistance(x1,y1,x2,y2):

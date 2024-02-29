@@ -12,7 +12,7 @@ template_filepath = 'ParsedPNGs\\template\\'
 def WriteFiles(input_filepath, output_filepath):
     # Open the file in 'rb' means read binary 
     #with open(input_filepath, 'rb') as f:
-
+    return 1
 
 
 def Combine(activeFloor, mapName):
@@ -26,7 +26,7 @@ def Combine(activeFloor, mapName):
         match tiles.type:
             case 'wall':
                 line.append('w')
-                AddTile('wall')
+                #AddTile('wall')
             case 'floor':
                 line.append('f')
             case 'stairsUp':
