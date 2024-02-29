@@ -19,10 +19,12 @@ def main():
             mapOptions = []
             for files in os.listdir(src_path):
                 mapOptions.append(files)
-            print(f"Choose from the listed map locations: {mapOptions}")
-            mapChoice = input()
-            if(mapChoice in mapOptions):
-                Combine(activeFloor, mapChoice)
+            print(f"Select the index of one of the following map locations: ")
+            for (i, maps) in enumerate(mapOptions):
+                print(i, maps)
+            mapChoice = int(input())
+            if(mapChoice < len(mapOptions)):
+                Combine(activeFloor, mapOptions[mapChoice])
             else:
                 print(f"Directory {mapChoice} not found")
             #Combine(activeFloor)
